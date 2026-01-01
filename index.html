@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Path Forge Pro - File System Engine</title>
+    <title>Path Forge Pro | System Sync</title>
     
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -12,58 +12,118 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap');
-        body { font-family: 'Inter', sans-serif; overflow: hidden; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Fira+Code&display=swap');
+        
+        :root { --accent: #3b82f6; }
+        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; overflow: hidden; }
         .mono { font-family: 'Fira Code', monospace; }
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
-        .context-menu { position: fixed; z-index: 1000; min-width: 180px; }
+        
+        /* Custom UI Elements */
+        .glass-panel { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(51, 65, 85, 0.5); }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+        .editor-area { background: radial-gradient(circle at top right, #0f172a, #020617); }
+        
+        /* Animations */
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="bg-slate-950 text-slate-200">
+<body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useCallback } = React;
 
         const App = () => {
             const [projectName, setProjectName] = useState("");
             const [tree, setTree] = useState(null);
             const [pathInput, setPathInput] = useState("");
             const [editingFile, setEditingFile] = useState(null);
-            const [isDarkMode, setIsDarkMode] = useState(true);
-            const [contextMenu, setContextMenu] = useState(null);
             const [expandedFolders, setExpandedFolders] = useState(new Set(['root']));
-            const [isExporting, setIsExporting] = useState(false);
+            const [isSyncing, setIsSyncing] = useState(false);
+            const [contextMenu, setContextMenu] = useState(null);
 
-            // --- Persistence (Local Storage) ---
+            // --- Local Storage Sync ---
             useEffect(() => {
-                const saved = localStorage.getItem('pathforge_v3_data');
-                if (saved) {
-                    const parsed = JSON.parse(saved);
-                    setTree(parsed.tree);
-                    setProjectName(parsed.projectName);
+                const savedData = localStorage.getItem('pathforge_pro_v1');
+                if (savedData) {
+                    const { tree: savedTree, projectName: savedName } = JSON.parse(savedData);
+                    setTree(savedTree);
+                    setProjectName(savedName);
                 }
             }, []);
 
             useEffect(() => {
                 if (tree) {
-                    localStorage.setItem('pathforge_v3_data', JSON.stringify({ tree, projectName }));
+                    localStorage.setItem('pathforge_pro_v1', JSON.stringify({ tree, projectName }));
                 }
-                if (window.lucide) window.lucide.createIcons();
+                if (window.lucide) lucide.createIcons();
             }, [tree, projectName]);
 
-            // --- REAL FILE SYSTEM ENGINE ---
-            const exportToRealFiles = async () => {
+            // --- Real System Export Logic ---
+            const syncToLocalSystem = async () => {
                 try {
                     if (!tree) return;
-                    setIsExporting(true);
+                    setIsSyncing(true);
                     
-                    // בחירת תיקייה במחשב
                     const rootHandle = await window.showDirectoryPicker();
                     
-                    const processNode = async (node, parentHandle) => {
+                    const writeNode = async (node, parentHandle) => {
                         if (node.type === 'file') {
-                            // סינון קבצים ריקים - כפי שביקשת
+                            // סינון קבצים ריקים - הדרישה שלך
                             if (node.content && node.content.trim().length > 0) {
-                                const fileHandle = await parentHandle.getFileHandle(node
+                                const fileHandle = await parentHandle.getFileHandle(node.name, { create: true });
+                                const writable = await fileHandle.createWritable();
+                                await writable.write(node.content);
+                                await writable.close();
+                            }
+                        } else {
+                            const dirHandle = await parentHandle.getDirectoryHandle(node.name, { create: true });
+                            for (const child of node.children) {
+                                await writeNode(child, dirHandle);
+                            }
+                        }
+                    };
+
+                    for (const child of tree.children) {
+                        await writeNode(child, rootHandle);
+                    }
+                    alert("🚀 סנכרון הושלם! הקבצים עם התוכן נוצרו במחשב.");
+                } catch (err) {
+                    if (err.name !== 'AbortError') alert("שגיאה בגישה לתיקייה.");
+                } finally {
+                    setIsSyncing(false);
+                }
+            };
+
+            const addPath = () => {
+                if (!pathInput.trim()) return;
+                const parts = pathInput.split('/').filter(Boolean);
+                const newTree = { ...tree };
+                let current = newTree;
+
+                parts.forEach((part, i) => {
+                    const isFile = i === parts.length - 1 && part.includes('.');
+                    let found = current.children.find(c => c.name === part);
+                    if (!found) {
+                        found = {
+                            id: Math.random().toString(36).substr(2, 9),
+                            name: part,
+                            type: isFile ? 'file' : 'folder',
+                            content: isFile ? '' : undefined,
+                            children: isFile ? undefined : []
+                        };
+                        current.children.push(found);
+                    }
+                    if (found.type === 'folder') {
+                        current = found;
+                        setExpandedFolders(prev => new Set(prev).add(found.id));
+                    }
+                });
+                setTree(newTree);
+                setPathInput("");
+            };
+
+            const TreeNode = ({ node, depth = 0, parent }) => {
+                const isExpanded = expandedFolders
