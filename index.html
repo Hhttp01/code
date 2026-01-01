@@ -3,25 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ProCode IDE - Full Version</title>
+    <title>ProCode IDE - Full & Responsive</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        /* עיצוב גלילה */
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #0d1117; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #30363d; border-radius: 10px; }
-        .ltr { direction: ltr; text-align: left; }
-        body { margin: 0; background-color: #0d1117; overscroll-behavior: none; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #484f58; }
         
+        /* כיווניות טקסט לקוד */
+        .ltr { direction: ltr; text-align: left; }
+        
+        body { 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            background-color: #0d1117; 
+            color: #c9d1d9;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        }
+
+        /* אנימציה לסרגל צד במובייל */
         @media (max-width: 768px) {
-            .sidebar-mobile {
-                position: fixed; right: 0; top: 0; bottom: 0; z-index: 50;
-                transform: translateX(100%); transition: transform 0.3s ease;
+            .sidebar-transition {
+                transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             }
-            .sidebar-open { transform: translateX(0); }
+            .sidebar-hidden { transform: translateX(100%); }
+            .sidebar-visible { transform: translateX(0); }
+        }
+
+        textarea {
+            tab-size: 4;
+            caret-color: #58a6ff;
         }
     </style>
 </head>
@@ -30,15 +48,17 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
-        const STORAGE_KEY = 'pro_code_complete_v3';
+        
+        const STORAGE_KEY = 'full_pro_code_storage_v1';
 
+        // רכיב אייקונים חכם של Lucide
         const Icon = ({ name, size = 18, className = "" }) => {
             const iconRef = useRef(null);
             useEffect(() => {
                 if (iconRef.current && window.lucide) {
-                    const icon = lucide[name] || lucide.File;
+                    const iconData = lucide[name] || lucide.File;
                     iconRef.current.innerHTML = lucide.createIcons({
-                        icons: { [name]: icon }
+                        icons: { [name]: iconData }
                     });
                 }
             }, [name]);
@@ -46,12 +66,13 @@
         };
 
         const App = () => {
+            // --- State ---
             const [files, setFiles] = useState(() => {
                 const saved = localStorage.getItem(STORAGE_KEY);
                 return saved ? JSON.parse(saved) : {
-                    'index.js': '// Welcome to ProCode\nconsole.log("Hello!");',
-                    'style.css': 'body { background: black; }',
-                    'README.md': '# Project\nSaved in local storage.'
+                    'main.js': '// Welcome to ProCode\nconsole.log("Hello World!");',
+                    'styles.css': 'body {\n  background: #0d1117;\n  color: white;\n}',
+                    'index.html': '<!DOCTYPE html>\n<html>\n<body>\n  <h1>Hello</h1>\n</body>\n</html>'
                 };
             });
 
@@ -62,6 +83,141 @@
             const [isExporting, setIsExporting] = useState(false);
             const jszipRef = useRef(null);
 
-            // שמירה אוטומטית
+            // --- Effects ---
+            
+            // שמירה אוטומטית ל-LocalStorage בכל שינוי
             useEffect(() => {
-                setIsSaving(
+                setIsSaving(true);
+                const timeout = setTimeout(() => {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
+                    setIsSaving(false);
+                }, 800);
+                return () => clearTimeout(timeout);
+            }, [files]);
+
+            // טעינת ספריות לייצוא ZIP (JSZip + FileSaver)
+            useEffect(() => {
+                const loadDependencies = async () => {
+                    const libs = [
+                        'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+                        'https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js'
+                    ];
+                    for (const src of libs) {
+                        if (!document.querySelector(`script[src="${src}"]`)) {
+                            const s = document.createElement('script');
+                            s.src = src;
+                            s.async = true;
+                            document.body.appendChild(s);
+                            await new Promise(r => s.onload = r);
+                        }
+                    }
+                    jszipRef.current = window.JSZip;
+                };
+                loadDependencies();
+
+                const handleResize = () => {
+                    if (window.innerWidth > 768) setSidebarOpen(true);
+                };
+                window.addEventListener('resize', handleResize);
+                return () => window.removeEventListener('resize', handleResize);
+            }, []);
+
+            // --- Logic Functions ---
+
+            const handleCreateFile = () => {
+                if (!newFileName.trim()) return;
+                const name = newFileName.trim();
+                if (files[name]) {
+                    alert('קובץ בשם זה כבר קיים');
+                    return;
+                }
+                setFiles(prev => ({ ...prev, [name]: '' }));
+                setActiveFile(name);
+                setNewFileName('');
+                if (window.innerWidth <= 768) setSidebarOpen(false);
+            };
+
+            const handleDeleteFile = (path, e) => {
+                e.stopPropagation();
+                if (confirm(`האם אתה בטוח שברצונך למחוק את ${path}?`)) {
+                    const updatedFiles = { ...files };
+                    delete updatedFiles[path];
+                    setFiles(updatedFiles);
+                    if (activeFile === path) {
+                        setActiveFile(Object.keys(updatedFiles)[0] || '');
+                    }
+                }
+            };
+
+            const handleDownloadProject = async () => {
+                if (!jszipRef.current) {
+                    alert('ספריות הטעינה עדיין לא מוכנות, נסה שוב בעוד רגע');
+                    return;
+                }
+                setIsExporting(true);
+                try {
+                    const zip = new jszipRef.current();
+                    Object.entries(files).forEach(([name, content]) => {
+                        zip.file(name, content);
+                    });
+                    const blob = await zip.generateAsync({ type: 'blob' });
+                    window.saveAs(blob, "pro-code-project.zip");
+                } catch (err) {
+                    console.error("Export failed", err);
+                } finally {
+                    setIsExporting(false);
+                }
+            };
+
+            return (
+                <div className="flex h-screen w-full bg-[#0d1117] overflow-hidden">
+                    
+                    {/* Activity Bar (Slim Left Bar) - Desktop Only */}
+                    <div className="hidden md:flex w-16 bg-[#161b22] border-l border-[#30363d] flex-col items-center py-6 gap-8">
+                        <Icon name="Box" size={28} className="text-blue-500" />
+                        <Icon name="Files" size={24} className="text-white cursor-pointer" />
+                        <Icon name="Search" size={24} className="text-[#8b949e] hover:text-white cursor-pointer" />
+                        <Icon name="Github" size={24} className="text-[#8b949e] hover:text-white cursor-pointer" />
+                        <Icon name="Settings" size={24} className="text-[#8b949e] mt-auto hover:text-white cursor-pointer" />
+                    </div>
+
+                    {/* Sidebar */}
+                    <aside className={`
+                        fixed md:relative md:translate-x-0
+                        sidebar-transition z-50
+                        w-80 h-full bg-[#0d1117] border-l border-[#30363d]
+                        flex flex-col
+                        ${isSidebarOpen ? 'sidebar-visible right-0' : 'sidebar-hidden -right-80 md:right-0'}
+                    `}>
+                        {/* Sidebar Header */}
+                        <div className="p-4 flex items-center justify-between">
+                            <span className="text-xs font-bold text-[#8b949e] uppercase tracking-wider">סייר קבצים</span>
+                            <button onClick={() => setSidebarOpen(false)} className="md:hidden p-1">
+                                <Icon name="X" size={20} />
+                            </button>
+                        </div>
+
+                        {/* New File Input */}
+                        <div className="px-4 mb-4">
+                            <div className="relative group">
+                                <input 
+                                    type="text"
+                                    value={newFileName}
+                                    onChange={(e) => setNewFileName(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleCreateFile()}
+                                    placeholder="שם קובץ חדש (למשל index.js)"
+                                    className="w-full bg-[#161b22] border border-[#30363d] rounded py-2 px-3 text-xs ltr focus:border-blue-500 outline-none transition-all"
+                                />
+                                <button onClick={handleCreateFile} className="absolute left-2 top-2 text-gray-500 hover:text-blue-400">
+                                    <Icon name="Plus" size={16} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* File List */}
+                        <div className="flex-grow overflow-y-auto px-2 space-y-0.5 custom-scrollbar">
+                            {Object.keys(files).sort().map(path => (
+                                <div 
+                                    key={path}
+                                    onClick={() => {
+                                        setActiveFile
