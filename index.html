@@ -3,57 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cloud Editor - Stable Version</title>
+    <title>Professional Cloud IDE + Preview</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-
     <style>
-        body { margin: 0; background-color: #0d1117; color: #c9d1d9; font-family: system-ui, -apple-system, sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #0d1117; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #484f58; }
         .ltr { direction: ltr; text-align: left; }
-        textarea { font-family: 'Consolas', 'Monaco', monospace; }
-        .sidebar-item:hover { background-color: #21262d; }
-        .active-file { background-color: #21262d; color: white; border-right: 2px solid #58a6ff; }
-        /* מניעת הבהוב בטעינה */
-        [react-cloak] { display: none; }
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #0d1117; color: #c9d1d9; }
+        textarea { resize: none; outline: none; border: none; }
+        iframe { background-color: white; }
     </style>
 </head>
 <body>
-    <div id="root">
-        <div style="padding: 20px; text-align: center;">טוען את המערכת... אם ההודעה לא נעלמת, יש לבדוק חיבור לאינטרנט.</div>
-    </div>
+    <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
+        const STORAGE_KEY = 'ide_pro_files_v2';
+
+        const Icon = ({ name, size = 16, className = "" }) => {
+            useEffect(() => {
+                if (window.lucide) window.lucide.createIcons();
+            }, [name]);
+            return <i data-lucide={name} style={{ width: size, height: size }} className={`inline-block ${className}`}></i>;
+        };
 
         const App = () => {
-            // טעינה מ-LocalStorage
             const [files, setFiles] = useState(() => {
-                try {
-                    const saved = localStorage.getItem('my_dev_files');
-                    return saved ? JSON.parse(saved) : {
-                        'index.js': '// התחל לכתוב כאן\nconsole.log("Hello!");',
-                        'README.md': '# פרויקט חדש'
-                    };
-                } catch (e) {
-                    return { 'index.js': 'console.log("Hello!");' };
-                }
+                const saved = localStorage.getItem(STORAGE_KEY);
+                return saved ? JSON.parse(saved) : {
+                    'index.html': '<h1 style="text-align:center; margin-top:50px;">שלום עולם! 🚀</h1>\n<p style="text-align:center;">נסו לערוך את הקוד ולראות את השינוי בלייב.</p>',
+                    'style.css': 'body { background: #f4f4f9; font-family: sans-serif; color: #333; }',
+                    'script.js': 'console.log("Live Preview Active");'
+                };
             });
 
             const [activeFile, setActiveFile] = useState(Object.keys(files)[0]);
-            const [newFileName, setNewFileName] = useState('');
+            const [newPath, setNewPath] = useState('');
+            const [previewDoc, setPreviewDoc] = useState('');
 
-            // שמירה אוטומטית בכל שינוי
             useEffect(() => {
-                localStorage.setItem('my_dev_files', JSON.stringify(files));
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
+                const html = files['index.html'] || '';
+                const css = files['style.css'] ? `<style>${files['style.css']}</style>` : '';
+                const js = files['script.js'] ? `<script>${files['script.js']}<\/script>` : '';
+                setPreviewDoc(`<!DOCTYPE html><html><head>${css}</head><body>${html}${js}</body></html>`);
             }, [files]);
 
-            const addFile = () => {
-                if (!newFileName || files[newFileName]) return;
-                const newFiles = { ...files, [newFileName]: '' };
-                setFiles(newFiles);
-                setActiveFile(newFileName);
-                setNewFileName('');
+            const handleCreateFile = () => {
+                if (!newPath.trim() || files[newPath]) return;
+                setFiles(prev => ({ ...prev, [newPath]: '' }));
+                setActiveFile(newPath);
+                setNewPath('');
+            };
+
+            const downloadZip = async () => {
+                const zip = new JSZip();
+                Object.entries(files).forEach(([name, content])
