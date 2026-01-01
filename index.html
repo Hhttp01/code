@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Editor - Auto Save</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #0d1117; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #484f58; }
+        .ltr { direction: ltr; text-align: left; }
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #0d1117; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        
+        const STORAGE_KEY = 'my_code_project_files';
+
+        const Icon = ({ name, size = 16, className = "" }) => {
+            const iconRef = useRef(null);
+            useEffect(() => {
+                if (iconRef.current && window.lucide) {
+                    iconRef.current.innerHTML = lucide.createIcons({
+                        icons: { [name]: lucide[name] }
+                    });
+                }
+            }, [name]);
+            return <i data-lucide={name} style={{ width: size, height: size }} className={`inline-block ${className}`}></i>;
+        };
+
+        const App = () => {
+            // טעינה ראשונית מ-LocalStorage או שימוש בברירת מחדל
+            const [files, setFiles] = useState(() => {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                return saved ? JSON.parse(saved) : {
+                    'src/index.js': '// ברוכים הבאים!\nconsole.log("Hello World!");',
+                    'styles/main.css': 'body { background: #0d1117; color: white; }',
+                    'README.md': '# פרויקט חדש\nהקוד נשמר אוטומטית בדפדפן.'
+                };
+            });
+
+            const [activeFile, setActiveFile] = useState(Object.keys(files)[0] || '');
+            const [newPath, setNewPath] = useState('');
+            const [selectedFiles, setSelectedFiles] = useState(Object.keys(files));
+            const [isExporting, setIsExporting] = useState(false);
+            const [libsReady, setLibsReady] = useState(false);
+            const jszipRef = useRef(null);
+
+            // שמירה אוטומטית בכל שינוי ב-files
+            useEffect(() => {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
+            }, [files]);
+
+            // טעינת ספריות חיצוניות להורדה
+            useEffect(() => {
+                const loadScripts = async () => {
+                    const scripts = [
+                        'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+                        'https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js'
+                    ];
+                    for (const src of scripts) {
+                        if (!document.querySelector(`script[src="${src}"]`)) {
+                            const script = document.createElement('script');
+                            script.src = src;
+                            script.async = true;
+                            document.body.appendChild(script);
+                            await new Promise(res => script.onload = res);
+                        }
+                    }
+                    jszipRef.current = window.JSZip;
+                    setLibsReady(true);
+                };
+                loadScripts();
+            }, []);
+
+            const handleCreateFile = () => {
+                if (!newPath.trim() || files[newPath]) return;
+                setFiles(prev => ({ ...prev, [newPath]: '' }));
+                setSelectedFiles(prev => [...prev, newPath]);
+                setActiveFile(newPath);
+                setNewPath('');
+            };
+
+            const handleDeleteFile = (path, e) => {
+                e.stopPropagation();
+                if (!confirm(`האם למחוק את ${path}?`)) return;
+                const newFiles = { ...files };
+                delete newFiles[path];
+                setFiles(newFiles);
+                setSelectedFiles(prev => prev.filter(p => p !== path));
+                if (activeFile === path) setActiveFile(Object.keys(newFiles)[0] || '');
+            };
+
+            const downloadProject = async () => {
+                if (!libsReady || !jszipRef.current || selectedFiles.length === 0) return;
+                setIsExporting(true);
+                try {
+                    const zip = new jszipRef.current();
+                    selectedFiles.forEach(path => zip.file(path, files[path]));
+                    const blob = await zip.generateAsync({ type: 'blob' });
+                    window.saveAs(blob, "project.zip");
+                } catch (err) {
+                    console.error("Export failed", err);
+                } finally {
+                    setIsExporting(false);
+                }
+            };
+
+            return (
+                <div className="flex h-screen bg-[#0d1117] text-[#c9d1d9] font-sans">
+                    {/* Activity Bar */}
+                    <div className="w-16 bg-[#161b22] border-l border-[#30363d] flex flex-col items-center py-4 gap-6">
+                        <Icon name="Box" size={28} className="text-blue-500 mb-4" />
+                        <Icon name="FileCode" size={24} className="text-white cursor-pointer" />
+                        <Icon name="Settings" size={24} className="text-[#8b949e] mt-auto cursor-pointer" />
+                    </div>
+
+                    {/* Sidebar */}
+                    <div className="w-80 bg-[#0d1117] border-l border-[#30363d] flex flex-col">
+                        <div className="p-4 flex justify-between items-center text-xs font-bold text-[#8b949e] uppercase">
+                            <span>סייר קבצים</span>
+                            <div className="flex gap-2">
+                                <button onClick={() => setNewPath('file.js')} title="קובץ חדש">
+                                    <Icon name="FilePlus" size={16} />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="px-4 pb-4">
+                            <input 
+                                type="text"
+                                value={newPath}
+                                onChange={(e) => setNewPath(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleCreateFile()}
+                                placeholder="שם קובץ חדש..."
+                                className="w-full bg-[#161b22] border border-[#30363d] rounded px-3 py-1.5 text-xs ltr focus:border-blue-500 outline-none"
+                            />
+                        </div>
+
+                        <div className="flex-grow overflow-y-auto px-2 space-y-0.5 custom-scrollbar">
+                            {Object.keys(files).sort().map(path => (
+                                <div 
+                                    key={path}
+                                    onClick={() => setActiveFile(path)}
+                                    className={`group flex items-center justify-between p-2 rounded-md cursor-pointer ${
+                                        activeFile === path ? 'bg-[#21262d] text-white' : 'hover:bg-[#161b22] text-[#8b949e]'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-2 truncate ltr">
+                                        <Icon name="FileCode" size={14} className={activeFile === path ? 'text-blue-400' : 'text-[#484f58]'} />
+                                        <span className="text-sm truncate">{path}</span>
+                                    </div>
+                                    <button onClick={(e) => handleDeleteFile(path, e)} className="opacity-0 group-hover:opacity-100 hover:text-red-400">
+                                        <Icon name="Trash2" size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="p-4 bg-[#161b22] border-t border-[#30363d]">
+                            <button 
+                                onClick={downloadProject}
+                                disabled={isExporting}
+                                className="w-full bg-[#238636] hover:bg-[#2ea043] text-white text-sm font-semibold py-2 rounded-md flex items-center justify-center gap-2"
+                            >
+                                {isExporting ? <Icon name="Loader2" size={18} className="animate-spin" /> : <Icon name="Download" size={18} />}
+                                הורד הכל (ZIP)
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Main Content */}
+                    <div className="flex-grow flex flex-col bg-[#0d1117]">
+                        {activeFile ? (
+                            <>
+                                <div className="bg-[#161b22] border-b border-[#30363d] px-4 py-2 text-xs flex items-center gap-2 ltr">
+                                    <Icon name="FileCode" size={14} className="text-blue-400" />
+                                    <span>{activeFile}</span>
+                                </div>
+                                <textarea
+                                    value={files[activeFile]}
+                                    onChange={(e) => setFiles({ ...files, [activeFile]: e.target.value })}
+                                    className="flex-grow bg-transparent p-4 font-mono text-sm outline-none resize-none ltr text-[#e6edf3] custom-scrollbar"
+                                    spellCheck="false"
+                                />
+                            </>
+                        ) : (
+                            <div className="flex-grow flex flex-col items-center justify-center opacity-20">
+                                <Icon name="Code2" size={100} />
+                                <p>בחר קובץ לעריכה</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
