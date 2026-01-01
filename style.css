@@ -1,0 +1,115 @@
+/* פונטים מקצועיים */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap');
+
+:root {
+    --bg-dark: #020617;
+    --panel-bg: rgba(15, 23, 42, 0.7);
+    --border-color: rgba(51, 65, 85, 0.5);
+    --accent-blue: #3b82f6;
+    --accent-emerald: #10b981;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-dark);
+    color: #f8fafc;
+    overflow: hidden;
+    height: 100vh;
+}
+
+/* הגדרות פונט לקוד */
+.mono {
+    font-family: 'Fira Code', monospace;
+}
+
+/* פאנל זכוכית (Glassmorphism) */
+.glass-panel {
+    background: var(--panel-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-color);
+}
+
+/* עיצוב סרגל גלילה */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #1e293b;
+    border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* אזור העורך */
+.editor-area {
+    background: radial-gradient(circle at top right, #0f172a, #020617);
+}
+
+/* עיצוב ה-Textarea של הקוד */
+textarea {
+    scrollbar-width: thin;
+    scrollbar-color: #1e293b transparent;
+    transition: all 0.2s ease;
+}
+
+textarea:focus {
+    background: rgba(59, 130, 246, 0.02);
+}
+
+/* תפריט קליק ימני (Context Menu) */
+.context-menu {
+    position: fixed;
+    z-index: 1000;
+    min-width: 180px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+    animation: menuAppear 0.1s ease-out;
+}
+
+@keyframes menuAppear {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* אנימציות כניסה לדף */
+.fade-in {
+    animation: fadeIn 0.4s ease-out forwards;
+}
+
+@keyframes fadeIn {
+    from { 
+        opacity: 0; 
+        transform: translateY(10px); 
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0); 
+    }
+}
+
+/* אפקטים לכפתורים */
+button {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button:active {
+    transform: scale(0.95);
+}
+
+/* עיצוב עץ הקבצים */
+.file-tree-item {
+    transition: background 0.15s ease;
+}
+
+.file-tree-item:hover {
+    background: rgba(51, 65, 85, 0.3);
+}
