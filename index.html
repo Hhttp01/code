@@ -3,237 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cloud Editor | IDE</title>
+    <title>Safe Cloud Editor</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@400;600&display=swap');
-        
-        body { 
-            margin: 0; 
-            font-family: 'Inter', sans-serif;
-            background-color: #0d1117;
-            color: #c9d1d9;
-            overflow: hidden;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #0d1117; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #30363d; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #484f58; }
-        
-        .code-font { font-family: 'Fira Code', monospace; }
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code&family=Inter:wght@400;700&display=swap');
+        body { margin: 0; font-family: 'Inter', sans-serif; background-color: #0d1117; color: #c9d1d9; }
         .ltr { direction: ltr; text-align: left; }
-        
-        /* אפקט מעבר חלק */
-        .transition-all { transition: all 0.2s ease; }
+        .code-font { font-family: 'Fira Code', monospace; }
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        /* הבטחת נראות כפתורים */
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
-        const STORAGE_KEY = 'ide_files_v1';
+        const { useState, useEffect } = React;
 
-        // קומפוננטת אייקון גמישה
-        const Icon = ({ name, size = 18, className = "" }) => {
-            const iconRef = useRef(null);
+        // רכיב אייקון משופר - טוען את האייקון מיד עם הרינדור
+        const LucideIcon = ({ name, size = 18, className = "" }) => {
+            const [svg, setSvg] = useState("");
             useEffect(() => {
-                if (iconRef.current && window.lucide) {
-                    iconRef.current.innerHTML = lucide.createIcons({
-                        icons: { [name]: lucide[name] }
+                if (window.lucide && window.lucide.icons[name]) {
+                    const iconSvg = window.lucide.createIcons({
+                        icons: { [name]: window.lucide.icons[name] },
+                        attrs: { strokeWidth: 2, width: size, height: size }
                     });
+                } else {
+                    // Fallback אם האייקון לא נטען
+                    console.warn(`Icon ${name} not found`);
                 }
-            }, [name]);
-            return <i data-lucide={name} style={{ width: size, height: size }} className={`inline-block ${className}`}></i>;
+                // הפעלה של lucide על כל האלמנטים בדף
+                window.lucide.createIcons();
+            }, [name, size]);
+
+            return <i data-lucide={name} className={className} style={{width: size, height: size, display: 'inline-block'}}></i>;
         };
 
         const App = () => {
             const [files, setFiles] = useState(() => {
-                const saved = localStorage.getItem(STORAGE_KEY);
+                const saved = localStorage.getItem('ide_v2');
                 return saved ? JSON.parse(saved) : {
-                    'index.js': '// Welcome to your Cloud Editor\nconsole.log("Hello from GitHub!");',
-                    'style.css': 'body { background: #0d1117; color: cyan; }',
-                    'README.md': '# Project\nYour files are auto-saved in the browser.'
-                };
-            });
-
-            const [activeFile, setActiveFile] = useState(Object.keys(files)[0] || '');
-            const [newFileName, setNewFileName] = useState('');
-            const [isExporting, setIsExporting] = useState(false);
-            const jszipRef = useRef(null);
-
-            // שמירה אוטומטית
-            useEffect(() => {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
-            }, [files]);
-
-            // טעינת ספריות ZIP
-            useEffect(() => {
-                const loadDeps = async () => {
-                    const scripts = [
-                        'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
-                        'https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js'
-                    ];
-                    for (const s of scripts) {
-                        const script = document.createElement('script');
-                        script.src = s;
-                        document.body.appendChild(script);
-                    }
-                    setTimeout(() => jszipRef.current = window.JSZip, 1000);
-                };
-                loadDeps();
-            }, []);
-
-            const addFile = () => {
-                if (!newFileName || files[newFileName]) return;
-                setFiles(prev => ({ ...prev, [newFileName]: '' }));
-                setActiveFile(newFileName);
-                setNewFileName('');
-            };
-
-            const deleteFile = (name, e) => {
-                e.stopPropagation();
-                if (confirm(`למחוק את ${name}?`)) {
-                    const next = { ...files };
-                    delete next[name];
-                    setFiles(next);
-                    if (activeFile === name) setActiveFile(Object.keys(next)[0] || '');
-                }
-            };
-
-            const downloadAll = async () => {
-                if (!window.JSZip) return alert("טוען ספריות, נסה שוב בעוד רגע");
-                setIsExporting(true);
-                const zip = new window.JSZip();
-                Object.entries(files).forEach(([name, content]) => zip.file(name, content));
-                const blob = await zip.generateAsync({ type: 'blob' });
-                window.saveAs(blob, "project.zip");
-                setIsExporting(false);
-            };
-
-            return (
-                <div className="flex h-screen w-full overflow-hidden bg-[#0d1117]">
-                    
-                    {/* Activity Bar (Side Nav) */}
-                    <div className="w-14 flex flex-col items-center py-4 bg-[#161b22] border-l border-[#30363d] gap-8">
-                        <Icon name="Codesandbox" size={28} className="text-blue-500" />
-                        <div className="flex flex-col gap-6">
-                            <button title="Files" className="text-white opacity-100"><Icon name="Files" size={22} /></button>
-                            <button title="Search" className="text-gray-500 hover:text-white transition-all"><Icon name="Search" size={22} /></button>
-                            <button title="Github" className="text-gray-500 hover:text-white transition-all"><Icon name="Github" size={22} /></button>
-                        </div>
-                        <button title="Settings" className="mt-auto text-gray-500 hover:text-white transition-all"><Icon name="Settings" size={22} /></button>
-                    </div>
-
-                    {/* Sidebar (File Explorer) */}
-                    <div className="w-64 flex flex-col bg-[#0d1117] border-l border-[#30363d]">
-                        <div className="p-4 flex items-center justify-between">
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Explorer</span>
-                            <button onClick={() => setNewFileName('new_file.js')} className="text-gray-500 hover:text-white"><Icon name="FilePlus" size={16} /></button>
-                        </div>
-
-                        {/* New File Input */}
-                        <div className="px-3 mb-4">
-                            <input 
-                                type="text"
-                                value={newFileName}
-                                onChange={e => setNewFileName(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && addFile()}
-                                placeholder="Press Enter to add..."
-                                className="w-full bg-[#161b22] border border-[#30363d] rounded px-2 py-1 text-xs outline-none focus:border-blue-500 ltr"
-                            />
-                        </div>
-
-                        {/* File List */}
-                        <div className="flex-grow overflow-y-auto custom-scrollbar px-2">
-                            {Object.keys(files).map(name => (
-                                <div 
-                                    key={name}
-                                    onClick={() => setActiveFile(name)}
-                                    className={`group flex items-center justify-between px-3 py-2 rounded-md cursor-pointer mb-1 transition-all ${
-                                        activeFile === name ? 'bg-[#21262d] text-white' : 'text-gray-400 hover:bg-[#161b22]'
-                                    }`}
-                                >
-                                    <div className="flex items-center gap-2 truncate ltr">
-                                        <Icon name="FileCode" size={14} className={activeFile === name ? 'text-blue-400' : 'text-gray-600'} />
-                                        <span className="text-sm truncate">{name}</span>
-                                    </div>
-                                    <button onClick={e => deleteFile(name, e)} className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all">
-                                        <Icon name="X" size={14} />
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Export Button */}
-                        <div className="p-4 bg-[#161b22]/50 border-t border-[#30363d]">
-                            <button 
-                                onClick={downloadAll}
-                                disabled={isExporting}
-                                className="w-full flex items-center justify-center gap-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold py-2 rounded transition-all shadow-lg active:scale-95"
-                            >
-                                {isExporting ? <Icon name="Loader2" className="animate-spin" /> : <Icon name="Download" />}
-                                Export ZIP
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Main Editor */}
-                    <div className="flex-grow flex flex-col min-w-0">
-                        {activeFile ? (
-                            <>
-                                {/* Tab Bar */}
-                                <div className="flex bg-[#161b22] border-b border-[#30363d] h-9 overflow-x-auto no-scrollbar">
-                                    <div className="flex items-center px-4 bg-[#0d1117] border-t-2 border-blue-500 text-xs gap-2 ltr border-r border-[#30363d]">
-                                        <Icon name="FileCode" size={14} className="text-blue-400" />
-                                        <span>{activeFile}</span>
-                                    </div>
-                                </div>
-
-                                {/* Code Area */}
-                                <div className="flex-grow flex ltr relative">
-                                    <div className="w-12 bg-[#0d1117] border-r border-[#30363d] pt-4 text-center text-[11px] text-gray-600 code-font select-none">
-                                        {[...Array(40)].map((_, i) => <div key={i} className="leading-6">{i + 1}</div>)}
-                                    </div>
-                                    <textarea
-                                        value={files[activeFile]}
-                                        onChange={e => setFiles({ ...files, [activeFile]: e.target.value })}
-                                        className="flex-grow bg-transparent p-4 outline-none resize-none text-[#e6edf3] code-font text-[13px] leading-6 custom-scrollbar"
-                                        spellCheck="false"
-                                    />
-                                </div>
-
-                                {/* Footer Status Bar */}
-                                <div className="h-6 bg-[#0d1117] border-t border-[#30363d] flex items-center px-4 justify-between text-[10px] text-gray-500 font-medium">
-                                    <div className="flex items-center gap-4">
-                                        <span className="flex items-center gap-1 text-green-500"><Icon name="Check" size={10} /> Auto-saved</span>
-                                        <span>UTF-8</span>
-                                    </div>
-                                    <div className="flex items-center gap-4 ltr">
-                                        <span>JavaScript (React)</span>
-                                        <span>Spaces: 2</span>
-                                        <span className="text-blue-400 uppercase">Ready</span>
-                                    </div>
-                                </div>
-                            </>
-                        ) : (
-                            <div className="flex-grow flex flex-col items-center justify-center opacity-10">
-                                <Icon name="Code" size={120} />
-                                <h2 className="text-2xl font-bold mt-4 italic">Cloud IDE</h2>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-        };
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+                    'index.js': '
